@@ -33,13 +33,14 @@ bool CameraManager::begin()
   config.frame_size = hasPsram ? app_config::CAMERA_FRAME_SIZE : app_config::CAMERA_FRAME_SIZE_NO_PSRAM;
   config.jpeg_quality = app_config::CAMERA_JPEG_QUALITY;
   config.fb_count = hasPsram ? app_config::CAMERA_FB_COUNT : app_config::CAMERA_FB_COUNT_NO_PSRAM;
-  config.grab_mode = CAMERA_GRAB_LATEST;
+  config.grab_mode = app_config::CAMERA_GRAB_MODE;
   config.fb_location = hasPsram ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
 
-  serial_log::info("Camera config: frame_size=%d quality=%d fb_count=%d psram=%s",
+  serial_log::info("Camera config: frame_size=%d quality=%d fb_count=%d xclk=%luHz psram=%s",
                     config.frame_size,
                     config.jpeg_quality,
                     config.fb_count,
+                    static_cast<unsigned long>(config.xclk_freq_hz),
                     hasPsram ? "yes" : "no");
 
   const esp_err_t err = esp_camera_init(&config);
@@ -59,10 +60,11 @@ bool CameraManager::begin()
       r == app_config::CameraRotation::FlipH || r == app_config::CameraRotation::Rotate180 ? 1 : 0);
   }
 
-  serial_log::info("Camera ready: frame_size=%d quality=%d fb_count=%d psram=%s",
+  serial_log::info("Camera ready: frame_size=%d quality=%d fb_count=%d xclk=%luHz psram=%s",
                    config.frame_size,
                    config.jpeg_quality,
                    config.fb_count,
+                   static_cast<unsigned long>(config.xclk_freq_hz),
                    hasPsram ? "yes" : "no");
   return true;
 }
