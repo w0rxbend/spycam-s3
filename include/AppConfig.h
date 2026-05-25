@@ -52,28 +52,27 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 constexpr serial_log::Level LOG_LEVEL = serial_log::Level::Info;
 constexpr uint32_t STATUS_LOG_INTERVAL_MS = 5000;
 
-constexpr framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_SVGA;
-constexpr int CAMERA_JPEG_QUALITY = 10;
-constexpr int CAMERA_FB_COUNT = 3;
+constexpr framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_VGA;
+constexpr int CAMERA_JPEG_QUALITY = 14;
+constexpr int CAMERA_FB_COUNT = 2;
 constexpr framesize_t CAMERA_FRAME_SIZE_NO_PSRAM = FRAMESIZE_QVGA;
 constexpr int CAMERA_FB_COUNT_NO_PSRAM = 1;
 constexpr CameraRotation CAMERA_ROTATION = CameraRotation::None;
-constexpr camera_grab_mode_t CAMERA_GRAB_MODE = CAMERA_GRAB_LATEST;
-// ESP32-S2/S3 camera driver enables EDMA mode at 16 MHz XCLK.
-constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 16000000;
+constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 20000000;
 
-constexpr uint32_t TARGET_FPS = 12;
+constexpr uint32_t TARGET_FPS = 8;
 constexpr uint32_t FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
 
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint32_t TCP_CONNECT_TIMEOUT_MS = 8000;
 constexpr uint32_t SEND_TIMEOUT_MS = 10000;
-constexpr size_t TCP_SEND_CHUNK_SIZE = 8192;
 constexpr uint32_t RECONNECT_BACKOFF_MIN_MS = 500;
 constexpr uint32_t RECONNECT_BACKOFF_MAX_MS = 30000;
 
-constexpr uint32_t CAMERA_TASK_STACK_BYTES = 8192;
-constexpr uint32_t SENDER_TASK_STACK_BYTES = 10240;
+constexpr uint32_t CAMERA_TASK_STACK = 6144;
+constexpr uint32_t SENDER_TASK_STACK = 8192;
+constexpr uint32_t CAMERA_TASK_STACK_BYTES = CAMERA_TASK_STACK;
+constexpr uint32_t SENDER_TASK_STACK_BYTES = SENDER_TASK_STACK;
 constexpr UBaseType_t CAMERA_TASK_PRIORITY = 2;
 constexpr UBaseType_t SENDER_TASK_PRIORITY = 1;
 constexpr BaseType_t CAMERA_TASK_CORE = 1;

@@ -4,6 +4,10 @@
 #include "FrameProtocol.h"
 #include "SerialLog.h"
 
+namespace {
+constexpr size_t kSendChunkSize = 4096;
+}
+
 TcpFrameSender::TcpFrameSender(const char *host, uint16_t port)
     : host_(host),
       port_(port),
@@ -73,12 +77,11 @@ bool TcpFrameSender::sendFrame(camera_fb_t *frame)
 
   const uint32_t now = millis();
   if (now - lastStatusAt_ >= app_config::STATUS_LOG_INTERVAL_MS) {
-    serial_log::info("Sender task: sent=%lu failed_sends=%lu last_seq=%lu wifi_rssi=%ld stack_free=%u",
+    serial_log::info("Sender task: sent=%lu failed_sends=%lu last_seq=%lu wifi_rssi=%ld",
                      static_cast<unsigned long>(sentFrames_),
                      static_cast<unsigned long>(failedSends_),
                      static_cast<unsigned long>(sequence_ - 1),
-                     static_cast<long>(WiFi.RSSI()),
-                     static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+                     static_cast<long>(WiFi.RSSI()));
     lastStatusAt_ = now;
   }
 
@@ -164,9 +167,7 @@ bool TcpFrameSender::sendAll(const uint8_t *data, size_t len)
     }
 
     const size_t remaining = len - sent;
-    const size_t chunkLen = remaining > app_config::TCP_SEND_CHUNK_SIZE
-                                ? app_config::TCP_SEND_CHUNK_SIZE
-                                : remaining;
+    const size_t chunkLen = remaining > kSendChunkSize ? kSendChunkSize : remaining;
     const size_t written = client_.write(data + sent, chunkLen);
     if (written == 0) {
       vTaskDelay(pdMS_TO_TICKS(5));

@@ -56,9 +56,7 @@ The sequence number is useful for detecting dropped frames. The timestamp is the
 
 ## Configuration
 
-Configure WiFi, server address, camera id, frame size, JPEG quality, target FPS, TCP chunk size, and task placement in `include/AppConfig.h`.
-
-The default profile is tuned for the ESP32-S3-WROOM N16R8 class board: SVGA JPEG, quality 10, three PSRAM frame buffers, 12 FPS target, 16 MHz camera XCLK for ESP32-S3 EDMA mode, and separate camera/sender tasks pinned to the two cores. Status logs include free task stack and memory readings so you can tighten or raise these values after checking real device output.
+Configure WiFi, server address, camera id, frame size, JPEG quality, and target FPS in `include/AppConfig.h`.
 
 The project intentionally does not copy `../spycam/include/credentials.h`. Add `include/credentials.h` locally if you want compile-time WiFi credentials:
 
