@@ -124,12 +124,12 @@ constexpr framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_VGA;
 // Possible values: driver quality integers, commonly 10-30 for ESP camera
 // JPEG. Lower numbers mean better image quality and larger frames; higher
 // numbers mean stronger compression, smaller frames, and lower load.
-constexpr int CAMERA_JPEG_QUALITY = 14;
+constexpr int CAMERA_JPEG_QUALITY = 20;
 
 // Possible values: 1 or more frame buffers; 1 and 2 are the practical choices.
 // 2 improves capture throughput with PSRAM, while 1 reduces memory pressure and
 // latency.
-constexpr int CAMERA_FB_COUNT = 2;
+constexpr int CAMERA_FB_COUNT = 1;
 
 // Possible values: same FRAMESIZE_* values as CAMERA_FRAME_SIZE. Keep this
 // smaller than the PSRAM setting because frames are stored in internal RAM.
@@ -147,12 +147,12 @@ constexpr CameraRotation CAMERA_ROTATION = CameraRotation::None;
 // Possible values: camera XCLK frequency in Hz; common values are 10000000,
 // 16000000, and 20000000. 20 MHz is typical, while lower values may reduce
 // capture pressure but can be module-dependent.
-constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 20000000;
+constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 10000000;
 
 // Possible values: positive FPS values; practical streaming values are usually
 // 1-30. Lower this first to reduce CPU, camera, WiFi, and server load. Do not
 // set it to 0 because FRAME_INTERVAL_MS divides by it.
-constexpr uint32_t TARGET_FPS = 12;
+constexpr uint32_t TARGET_FPS = 5;
 
 // Possible values: derived from TARGET_FPS as 1000 / TARGET_FPS. Edit
 // TARGET_FPS instead of this value so logs and pacing stay consistent.
@@ -199,12 +199,12 @@ constexpr uint32_t SENDER_TASK_STACK_BYTES = SENDER_TASK_STACK;
 // Possible values: FreeRTOS priorities from 0 to configMAX_PRIORITIES - 1.
 // Higher values run before lower-priority tasks; keep camera above sender when
 // capture timing matters.
-constexpr UBaseType_t CAMERA_TASK_PRIORITY = 2;
+constexpr UBaseType_t CAMERA_TASK_PRIORITY = 1;
 
 // Possible values: FreeRTOS priorities from 0 to configMAX_PRIORITIES - 1.
 // Lower than CAMERA_TASK_PRIORITY lets capture pacing win when the device is
 // busy.
-constexpr UBaseType_t SENDER_TASK_PRIORITY = 1;
+constexpr UBaseType_t SENDER_TASK_PRIORITY = 2;
 
 // Possible values: 0, 1, or tskNO_AFFINITY. On dual-core ESP32-S3 boards, core
 // 1 is commonly used for application/camera work.
