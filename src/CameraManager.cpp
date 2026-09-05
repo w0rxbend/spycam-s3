@@ -4,10 +4,10 @@
 #include "CameraPins.h"
 #include "SerialLog.h"
 
-bool CameraManager::begin()
-{
-  serial_log::info("Initializing camera");
+namespace {
 
+camera_config_t makeCameraConfig(bool hasPsram)
+{
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -29,22 +29,51 @@ bool CameraManager::begin()
   config.pin_reset = camera_pins::RESET_GPIO_NUM;
   config.xclk_freq_hz = app_config::CAMERA_XCLK_FREQ_HZ;
   config.pixel_format = PIXFORMAT_JPEG;
-  const bool hasPsram = psramFound();
   config.frame_size = hasPsram ? app_config::CAMERA_FRAME_SIZE : app_config::CAMERA_FRAME_SIZE_NO_PSRAM;
   config.jpeg_quality = app_config::CAMERA_JPEG_QUALITY;
   config.fb_count = hasPsram ? app_config::CAMERA_FB_COUNT : app_config::CAMERA_FB_COUNT_NO_PSRAM;
   config.grab_mode = CAMERA_GRAB_LATEST;
   config.fb_location = hasPsram ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  return config;
+}
 
-  serial_log::info("Camera config: frame_size=%d quality=%d fb_count=%d psram=%s",
-                    config.frame_size,
-                    config.jpeg_quality,
-                    config.fb_count,
-                    hasPsram ? "yes" : "no");
+// One format string for every stage, so a new field can never be added to
+// half of the camera log lines.
+void logCameraStatus(const char *stage, const camera_config_t &config, bool hasPsram)
+{
+  serial_log::info("Camera %s: frame_size=%d quality=%d fb_count=%d psram=%s",
+                   stage,
+                   static_cast<int>(config.frame_size),
+                   config.jpeg_quality,
+                   config.fb_count,
+                   hasPsram ? "yes" : "no");
+}
+
+void applyRotation(sensor_t *sensor, app_config::CameraRotation rotation)
+{
+  const bool flipVertically = rotation == app_config::CameraRotation::FlipV ||
+                              rotation == app_config::CameraRotation::Rotate180;
+  const bool flipHorizontally = rotation == app_config::CameraRotation::FlipH ||
+                                rotation == app_config::CameraRotation::Rotate180;
+  sensor->set_vflip(sensor, flipVertically ? 1 : 0);
+  sensor->set_hmirror(sensor, flipHorizontally ? 1 : 0);
+}
+
+}  // namespace
+
+namespace camera_manager {
+
+bool begin()
+{
+  serial_log::info("Initializing camera");
+
+  const bool hasPsram = psramFound();
+  const camera_config_t config = makeCameraConfig(hasPsram);
+  logCameraStatus("config", config, hasPsram);
 
   const esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    serial_log::error("Camera init failed: 0x%x", err);
+    serial_log::error("Camera init failed: 0x%x", static_cast<unsigned>(err));
     return false;
   }
 
@@ -52,29 +81,16 @@ bool CameraManager::begin()
   if (sensor != nullptr) {
     sensor->set_framesize(sensor, config.frame_size);
     sensor->set_quality(sensor, app_config::CAMERA_JPEG_QUALITY);
-    const auto r = app_config::CAMERA_ROTATION;
-    sensor->set_vflip(sensor,
-      r == app_config::CameraRotation::FlipV || r == app_config::CameraRotation::Rotate180 ? 1 : 0);
-    sensor->set_hmirror(sensor,
-      r == app_config::CameraRotation::FlipH || r == app_config::CameraRotation::Rotate180 ? 1 : 0);
+    applyRotation(sensor, app_config::CAMERA_ROTATION);
   }
 
-  serial_log::info("Camera ready: frame_size=%d quality=%d fb_count=%d psram=%s",
-                   config.frame_size,
-                   config.jpeg_quality,
-                   config.fb_count,
-                   hasPsram ? "yes" : "no");
+  logCameraStatus("ready", config, hasPsram);
   return true;
 }
 
-camera_fb_t *CameraManager::capture()
+CameraFrame capture()
 {
-  return esp_camera_fb_get();
+  return CameraFrame(esp_camera_fb_get());
 }
 
-void CameraManager::release(camera_fb_t *frame)
-{
-  if (frame != nullptr) {
-    esp_camera_fb_return(frame);
-  }
-}
+} // namespace camera_manager

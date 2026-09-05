@@ -3,15 +3,24 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include "esp_camera.h"
+#include <Timing.h>
+
+#include "CameraFrame.h"
 
 class TcpFrameSender {
 public:
   TcpFrameSender(const char *host, uint16_t port);
+  TcpFrameSender(const TcpFrameSender &) = delete;
+  TcpFrameSender &operator=(const TcpFrameSender &) = delete;
+  TcpFrameSender(TcpFrameSender &&) = delete;
+  TcpFrameSender &operator=(TcpFrameSender &&) = delete;
 
   void begin();
   bool ensureConnected();
-  bool sendFrame(camera_fb_t *frame);
+  // Sends one frame over the already-open connection. The caller must have
+  // called ensureConnected() successfully first. The frame is borrowed, not
+  // owned; the caller's CameraFrame keeps it alive for the whole call.
+  bool sendFrame(const CameraFrame &frame);
   void disconnect();
 
 private:
@@ -25,8 +34,8 @@ private:
   uint16_t port_;
   WiFiClient client_;
   uint32_t sequence_;
-  uint32_t backoffMs_;
+  timing::Backoff backoff_;
   uint32_t sentFrames_;
   uint32_t failedSends_;
-  uint32_t lastStatusAt_;
+  timing::IntervalTimer statusLog_;
 };

@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Arduino.h>
-#include "esp_camera.h"
+#include "CameraFrame.h"
 
-class CameraManager {
-public:
-  bool begin();
-  camera_fb_t *capture();
-  void release(camera_fb_t *frame);
-};
+// There is exactly one camera peripheral on the board and esp_camera keeps all
+// of its state internally, so there is nothing for an object to own here.
+namespace camera_manager {
+
+bool begin();
+// Returns an empty CameraFrame when the sensor could not produce a frame.
+CameraFrame capture();
+
+} // namespace camera_manager

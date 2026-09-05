@@ -1,10 +1,8 @@
 #include "LatestFrameSlot.h"
 
-#include "SerialLog.h"
+#include <utility>
 
-LatestFrameSlot::LatestFrameSlot() : mutex_(nullptr), frameReady_(nullptr), frame_(nullptr)
-{
-}
+#include "SerialLog.h"
 
 bool LatestFrameSlot::begin()
 {
@@ -13,34 +11,42 @@ bool LatestFrameSlot::begin()
   return mutex_ != nullptr && frameReady_ != nullptr;
 }
 
-void LatestFrameSlot::put(camera_fb_t *frame)
+void LatestFrameSlot::put(CameraFrame frame)
 {
-  if (frame == nullptr || mutex_ == nullptr || frameReady_ == nullptr) {
-    if (frame != nullptr) {
-      serial_log::warn("Dropping frame because latest-frame slot is not initialized");
-      esp_camera_fb_return(frame);
-    }
+  if (!frame) {
     return;
   }
 
-  camera_fb_t *staleFrame = nullptr;
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  staleFrame = frame_;
-  frame_ = frame;
-  xSemaphoreGive(mutex_);
+  if (mutex_ == nullptr || frameReady_ == nullptr) {
+    serial_log::warn("Dropping frame because latest-frame slot is not initialized");
+    return;
+  }
 
-  if (staleFrame != nullptr) {
-    serial_log::debug("Dropping stale frame before sender consumed it");
-    esp_camera_fb_return(staleFrame);
+  {
+    // Declared outside the locked region on purpose: handing a buffer back to
+    // the camera driver is a driver call, and the capture task must not make it
+    // while the sender task could be blocked on this mutex. Moving the stale
+    // frame out here means the slot swap does no work beyond two pointer
+    // assignments, and the release happens when staleFrame dies below.
+    CameraFrame staleFrame;
+
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    staleFrame = std::move(frame_);
+    frame_ = std::move(frame);
+    xSemaphoreGive(mutex_);
+
+    if (staleFrame) {
+      serial_log::debug("Dropping stale frame before sender consumed it");
+    }
   }
 
   xSemaphoreGive(frameReady_);
 }
 
-camera_fb_t *LatestFrameSlot::takeLatest(TickType_t waitTicks)
+CameraFrame LatestFrameSlot::takeLatest(TickType_t waitTicks)
 {
   if (mutex_ == nullptr || frameReady_ == nullptr) {
-    return nullptr;
+    return CameraFrame();
   }
 
   const TickType_t startedAt = xTaskGetTickCount();
@@ -48,20 +54,19 @@ camera_fb_t *LatestFrameSlot::takeLatest(TickType_t waitTicks)
   for (;;) {
     const TickType_t elapsed = xTaskGetTickCount() - startedAt;
     if (elapsed >= waitTicks) {
-      return nullptr;
+      return CameraFrame();
     }
 
     if (xSemaphoreTake(frameReady_, waitTicks - elapsed) != pdTRUE) {
-      return nullptr;
+      return CameraFrame();
     }
 
-    camera_fb_t *frame = nullptr;
+    CameraFrame frame;
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    frame = frame_;
-    frame_ = nullptr;
+    frame = std::move(frame_);
     xSemaphoreGive(mutex_);
 
-    if (frame != nullptr) {
+    if (frame) {
       return frame;
     }
   }

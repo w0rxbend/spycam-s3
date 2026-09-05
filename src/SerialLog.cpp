@@ -2,10 +2,15 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
 serial_log::Level currentLevel = serial_log::Level::Info;
+
+// Longer log lines are cut to fit; logMessage() marks a cut line so a
+// truncated diagnostic is not mistaken for a complete one.
+constexpr size_t kMaxLogMessageLen = 192;
 
 const char *levelName(serial_log::Level level)
 {
@@ -28,8 +33,14 @@ void logMessage(serial_log::Level level, const char *format, va_list args)
     return;
   }
 
-  char message[192];
-  vsnprintf(message, sizeof(message), format, args);
+  char message[kMaxLogMessageLen];
+  const int written = vsnprintf(message, sizeof(message), format, args);
+  if (written >= static_cast<int>(sizeof(message))) {
+    static const char kTruncationMarker[] = "...[cut]";
+    memcpy(message + sizeof(message) - sizeof(kTruncationMarker),
+           kTruncationMarker,
+           sizeof(kTruncationMarker));
+  }
   Serial.printf("[%10lu] %-5s %s\n",
                 static_cast<unsigned long>(millis()),
                 levelName(level),
@@ -55,7 +66,7 @@ void setLevel(Level level)
 
 bool enabled(Level level)
 {
-  return static_cast<uint8_t>(level) <= static_cast<uint8_t>(currentLevel);
+  return levelEnabled(currentLevel, level);
 }
 
 void error(const char *format, ...)

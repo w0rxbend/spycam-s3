@@ -1,0 +1,13 @@
+{
+  "name": "log_level",
+  "version": "1.0.0",
+  "description": "Severity ordering for the serial logger: the Level enum and the predicate deciding whether a message passes the configured threshold. Header-only, freestanding C++11: no Arduino, FreeRTOS, or esp_camera dependency, so the native test environment can exercise it directly.",
+  "keywords": "logging, levels, filtering",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "dependencies": {},
+  "build": {
+    "libArchive": false
+  }
+}

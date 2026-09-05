@@ -1,7 +1,8 @@
 #include "TcpFrameSender.h"
 
+#include <FrameProtocol.h>
+
 #include "AppConfig.h"
-#include "FrameProtocol.h"
 #include "SerialLog.h"
 
 namespace {
@@ -12,10 +13,10 @@ TcpFrameSender::TcpFrameSender(const char *host, uint16_t port)
     : host_(host),
       port_(port),
       sequence_(0),
-      backoffMs_(app_config::RECONNECT_BACKOFF_MIN_MS),
+      backoff_(app_config::RECONNECT_BACKOFF_MIN_MS, app_config::RECONNECT_BACKOFF_MAX_MS),
       sentFrames_(0),
       failedSends_(0),
-      lastStatusAt_(0)
+      statusLog_(app_config::STATUS_LOG_INTERVAL_MS, 0)
 {
 }
 
@@ -27,7 +28,7 @@ void TcpFrameSender::begin()
   WiFi.persistent(false);
   client_.setNoDelay(true);
   client_.setTimeout(app_config::SEND_TIMEOUT_MS / 1000);
-  lastStatusAt_ = millis();
+  statusLog_ = timing::IntervalTimer(app_config::STATUS_LOG_INTERVAL_MS, millis());
 }
 
 bool TcpFrameSender::ensureConnected()
@@ -38,18 +39,24 @@ bool TcpFrameSender::ensureConnected()
   return ensureTcpConnected();
 }
 
-bool TcpFrameSender::sendFrame(camera_fb_t *frame)
+bool TcpFrameSender::sendFrame(const CameraFrame &frame)
 {
-  if (frame == nullptr || frame->buf == nullptr || frame->len == 0) {
+  const uint8_t *payload = frame.data();
+  const size_t payloadLen = frame.size();
+  if (payload == nullptr || payloadLen == 0) {
     return false;
   }
 
-  if (!ensureConnected()) {
+  // The caller owns connection management (senderTask calls ensureConnected()
+  // before it takes a frame), so a frame is never held across a reconnect.
+  if (!client_.connected()) {
     return false;
   }
+
+  const uint32_t frameSequence = sequence_++;
 
   uint8_t header[frame_protocol::HEADER_SIZE];
-  frame_protocol::buildHeader(header, sequence_++, static_cast<uint32_t>(frame->len), millis());
+  frame_protocol::buildHeader(header, frameSequence, static_cast<uint32_t>(payloadLen), millis());
 
   uint8_t cameraId[frame_protocol::CAMERA_ID_SIZE];
   frame_protocol::buildCameraId(cameraId, app_config::CAMERA_ID);
@@ -57,7 +64,7 @@ bool TcpFrameSender::sendFrame(camera_fb_t *frame)
   const uint32_t startedAt = millis();
   const bool sent = sendAll(header, sizeof(header)) &&
                     sendAll(cameraId, sizeof(cameraId)) &&
-                    sendAll(frame->buf, frame->len);
+                    sendAll(payload, payloadLen);
   const uint32_t elapsed = millis() - startedAt;
 
   if (!sent) {
@@ -71,18 +78,17 @@ bool TcpFrameSender::sendFrame(camera_fb_t *frame)
   resetBackoff();
   serial_log::debug("Sent frame camera=%lu seq=%lu bytes=%u elapsed=%lums",
                     static_cast<unsigned long>(app_config::CAMERA_ID),
-                    static_cast<unsigned long>(sequence_ - 1),
-                    static_cast<unsigned>(frame->len),
+                    static_cast<unsigned long>(frameSequence),
+                    static_cast<unsigned>(payloadLen),
                     static_cast<unsigned long>(elapsed));
 
-  const uint32_t now = millis();
-  if (now - lastStatusAt_ >= app_config::STATUS_LOG_INTERVAL_MS) {
-    serial_log::info("Sender task: sent=%lu failed_sends=%lu last_seq=%lu wifi_rssi=%ld",
+  if (statusLog_.due(millis())) {
+    serial_log::info("Sender task: sent=%lu failed_sends=%lu last_seq=%lu wifi_rssi=%ld stack_free=%u",
                      static_cast<unsigned long>(sentFrames_),
                      static_cast<unsigned long>(failedSends_),
-                     static_cast<unsigned long>(sequence_ - 1),
-                     static_cast<long>(WiFi.RSSI()));
-    lastStatusAt_ = now;
+                     static_cast<unsigned long>(frameSequence),
+                     static_cast<long>(WiFi.RSSI()),
+                     static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   }
 
   if (elapsed > app_config::FRAME_INTERVAL_MS) {
@@ -96,9 +102,9 @@ bool TcpFrameSender::sendFrame(camera_fb_t *frame)
 
 void TcpFrameSender::disconnect()
 {
-  if (client_.connected()) {
-    client_.stop();
-  }
+  // WiFiClient::connected() already returns false once the peer sends a FIN,
+  // but the socket stays open until stop() releases it, so stop unconditionally.
+  client_.stop();
 }
 
 bool TcpFrameSender::ensureWifiConnected()
@@ -138,7 +144,7 @@ bool TcpFrameSender::ensureTcpConnected()
   }
 
   client_.stop();
-  serial_log::info("Connecting TCP %s:%u", host_, port_);
+  serial_log::info("Connecting TCP %s:%u", host_, static_cast<unsigned>(port_));
   const bool connected = client_.connect(host_, port_, app_config::TCP_CONNECT_TIMEOUT_MS);
   if (!connected) {
     serial_log::warn("TCP connect failed");
@@ -182,13 +188,12 @@ bool TcpFrameSender::sendAll(const uint8_t *data, size_t len)
 
 void TcpFrameSender::waitBackoff()
 {
-  const uint32_t delayMs = backoffMs_;
-  backoffMs_ = min(backoffMs_ * 2, app_config::RECONNECT_BACKOFF_MAX_MS);
+  const uint32_t delayMs = backoff_.nextDelayMs();
   serial_log::info("Reconnect backoff %lums", static_cast<unsigned long>(delayMs));
   vTaskDelay(pdMS_TO_TICKS(delayMs));
 }
 
 void TcpFrameSender::resetBackoff()
 {
-  backoffMs_ = app_config::RECONNECT_BACKOFF_MIN_MS;
+  backoff_.reset();
 }

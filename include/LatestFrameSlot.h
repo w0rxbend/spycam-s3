@@ -1,17 +1,25 @@
 #pragma once
 
 #include <Arduino.h>
-#include "esp_camera.h"
+#include "CameraFrame.h"
 
 class LatestFrameSlot {
 public:
-  LatestFrameSlot();
+  LatestFrameSlot() = default;
+  LatestFrameSlot(const LatestFrameSlot &) = delete;
+  LatestFrameSlot &operator=(const LatestFrameSlot &) = delete;
+  LatestFrameSlot(LatestFrameSlot &&) = delete;
+  LatestFrameSlot &operator=(LatestFrameSlot &&) = delete;
+
   bool begin();
-  void put(camera_fb_t *frame);
-  camera_fb_t *takeLatest(TickType_t waitTicks);
+  // Takes ownership of the frame. Any frame the sender has not picked up yet is
+  // dropped, so the slot always holds the newest frame and never a queue.
+  void put(CameraFrame frame);
+  // Returns an empty CameraFrame if no frame arrived within waitTicks.
+  CameraFrame takeLatest(TickType_t waitTicks);
 
 private:
-  SemaphoreHandle_t mutex_;
-  SemaphoreHandle_t frameReady_;
-  camera_fb_t *frame_;
+  SemaphoreHandle_t mutex_ = nullptr;
+  SemaphoreHandle_t frameReady_ = nullptr;
+  CameraFrame frame_;
 };

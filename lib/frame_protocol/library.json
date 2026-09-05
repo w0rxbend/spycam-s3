@@ -1,0 +1,13 @@
+{
+  "name": "frame_protocol",
+  "version": "1.0.0",
+  "description": "Byte layout of the TCP JPEG frame header and camera id. Header-only, freestanding C++11: no Arduino, FreeRTOS, or esp_camera dependency, so the native test environment can exercise it directly.",
+  "keywords": "protocol, serialization, big-endian",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "dependencies": {},
+  "build": {
+    "libArchive": false
+  }
+}

@@ -16,12 +16,12 @@ build env=firmware_env:
 test env=test_env:
     pio test -e {{env}}
 
-# Run tests for a specific PlatformIO environment.
-test-env env:
-    pio test -e {{env}}
-
 # Build firmware and run native unit tests.
-check: test build
+check: build test
+
+# Run static analysis over the firmware sources.
+lint env=firmware_env:
+    pio check -e {{env}}
 
 # Flash firmware to the device. Override port with: just flash /dev/ttyUSB0
 flash port=upload_port env=firmware_env:

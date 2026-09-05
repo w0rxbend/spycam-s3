@@ -1,0 +1,13 @@
+{
+  "name": "timing",
+  "version": "1.0.0",
+  "description": "Wrap-safe interval timer and exponential backoff over a caller-supplied millisecond counter. Header-only, freestanding C++11: no Arduino, FreeRTOS, or esp_camera dependency, so the native test environment can exercise it directly.",
+  "keywords": "timing, scheduling, backoff",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "dependencies": {},
+  "build": {
+    "libArchive": false
+  }
+}

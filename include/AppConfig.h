@@ -23,8 +23,8 @@
  * 3. Increase CAMERA_JPEG_QUALITY. In the ESP camera driver, a larger quality
  *    number means stronger compression and smaller frames, but lower image
  *    quality. Try 18-24 for a lighter stream.
- * 4. Reduce CAMERA_FB_COUNT to 1. Fewer frame buffers lower memory pressure and
- *    buffering latency, at the cost of less capture pipeline overlap.
+ * 4. Do NOT reduce CAMERA_FB_COUNT below 2 on a PSRAM board; see the note on
+ *    that constant. Reduce load with steps 1-3 instead.
  * 5. Lower CAMERA_XCLK_FREQ_HZ only if the camera remains unstable after the
  *    steps above. A lower clock can reduce sensor/capture pressure, but may
  *    require testing because some camera modules are pickier about XCLK values.
@@ -126,18 +126,27 @@ constexpr framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_VGA;
 // numbers mean stronger compression, smaller frames, and lower load.
 constexpr int CAMERA_JPEG_QUALITY = 20;
 
-// Possible values: 1 or more frame buffers; 1 and 2 are the practical choices.
-// 2 improves capture throughput with PSRAM, while 1 reduces memory pressure and
-// latency.
-constexpr int CAMERA_FB_COUNT = 1;
+// Possible values: 2 or more when PSRAM is present. This MUST be at least 2:
+// the camera task hands a frame buffer to LatestFrameSlot and it is not
+// returned to the driver until the TCP send completes, so with one buffer
+// esp_camera_fb_get() has nothing to fill and blocks until the sender
+// finishes. Use TARGET_FPS, CAMERA_FRAME_SIZE, or CAMERA_JPEG_QUALITY to
+// reduce load instead. Typed size_t to match camera_config_t::fb_count, so
+// selecting between this and the no-PSRAM value needs no signed conversion.
+constexpr size_t CAMERA_FB_COUNT = 2;
+static_assert(CAMERA_FB_COUNT >= 2,
+              "a frame is held outside the camera task, so the driver needs a "
+              "second buffer to capture into");
 
 // Possible values: same FRAMESIZE_* values as CAMERA_FRAME_SIZE. Keep this
 // smaller than the PSRAM setting because frames are stored in internal RAM.
 constexpr framesize_t CAMERA_FRAME_SIZE_NO_PSRAM = FRAMESIZE_QVGA;
 
-// Possible values: 1 or more frame buffers; 1 is strongly recommended without
-// PSRAM to avoid exhausting internal RAM.
-constexpr int CAMERA_FB_COUNT_NO_PSRAM = 1;
+// Possible values: 1 without PSRAM, because two frame buffers would exhaust
+// internal RAM. Note the consequence: with one buffer the capture and send
+// stages cannot overlap, so the effective frame rate on a PSRAM-less board is
+// bounded by how long a send takes, not by TARGET_FPS.
+constexpr size_t CAMERA_FB_COUNT_NO_PSRAM = 1;
 
 // Possible values: CameraRotation::None, CameraRotation::FlipV,
 // CameraRotation::FlipH, or CameraRotation::Rotate180. Change this when the
@@ -155,8 +164,18 @@ constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 10000000;
 constexpr uint32_t TARGET_FPS = 5;
 
 // Possible values: derived from TARGET_FPS as 1000 / TARGET_FPS. Edit
-// TARGET_FPS instead of this value so logs and pacing stay consistent.
+// TARGET_FPS instead of this value so logs and pacing stay consistent. The
+// integer division rounds down, so the achieved rate is 1000 /
+// FRAME_INTERVAL_MS. Only exact divisors of 1000 (1, 2, 4, 5, 8, 10, 20, 25,
+// 40, 50, 100...) give exactly the requested rate; TARGET_FPS = 12 yields 83
+// ms, i.e. about 12.05 fps.
 constexpr uint32_t FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
+
+static_assert(TARGET_FPS > 0, "TARGET_FPS must be at least 1");
+static_assert(TARGET_FPS <= 1000,
+              "TARGET_FPS above 1000 makes FRAME_INTERVAL_MS zero, turning "
+              "vTaskDelayUntil into a busy spin");
+static_assert(FRAME_INTERVAL_MS > 0, "FRAME_INTERVAL_MS must be non-zero");
 
 // Possible values: milliseconds from 0 upward. This is the maximum time to wait
 // for WiFi before restarting the connection attempt; 10000-30000 is typical.
@@ -167,8 +186,16 @@ constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint32_t TCP_CONNECT_TIMEOUT_MS = 8000;
 
 // Possible values: milliseconds from 0 upward. This caps how long one frame
-// send may block before the sender treats it as failed and reconnects.
+// send may block before the sender treats it as failed and reconnects. Use
+// whole seconds (multiples of 1000). TcpFrameSender passes SEND_TIMEOUT_MS /
+// 1000 to WiFiClient::setTimeout(), which takes SECONDS on Arduino-ESP32 core
+// 2.x (see WiFiClient.cpp:325), so sub-second values would round down to a zero
+// socket timeout.
 constexpr uint32_t SEND_TIMEOUT_MS = 10000;
+
+static_assert(SEND_TIMEOUT_MS >= 1000 && SEND_TIMEOUT_MS % 1000 == 0,
+              "SEND_TIMEOUT_MS must be whole seconds; WiFiClient::setTimeout() "
+              "takes seconds on Arduino-ESP32 core 2.x");
 
 // Possible values: milliseconds from 0 upward. This is the first reconnect
 // delay after WiFi, TCP, or send failure; lower reconnects faster but retries
@@ -180,31 +207,38 @@ constexpr uint32_t RECONNECT_BACKOFF_MIN_MS = 500;
 // repeated failures.
 constexpr uint32_t RECONNECT_BACKOFF_MAX_MS = 30000;
 
-// Possible values: task stack size in bytes; must be large enough for camera
-// capture work. Increase if stack overflow occurs, decrease only after testing.
-constexpr uint32_t CAMERA_TASK_STACK = 6144;
+static_assert(RECONNECT_BACKOFF_MAX_MS >= RECONNECT_BACKOFF_MIN_MS,
+              "backoff max must not be below backoff min");
 
-// Possible values: task stack size in bytes; must be large enough for TCP/WiFi
-// send work. Increase if stack overflow occurs, decrease only after testing.
-constexpr uint32_t SENDER_TASK_STACK = 8192;
+// Possible values: task stack size in BYTES (the ESP-IDF
+// xTaskCreatePinnedToCore depth argument is bytes, not words); must be large
+// enough for camera capture work. Increase if a stack overflow occurs, decrease
+// only after measuring the reported stack_free.
+constexpr uint32_t CAMERA_TASK_STACK_BYTES = 6144;
 
-// Possible values: usually leave equal to CAMERA_TASK_STACK. This alias is the
-// value passed to xTaskCreatePinnedToCore() for the camera task.
-constexpr uint32_t CAMERA_TASK_STACK_BYTES = CAMERA_TASK_STACK;
-
-// Possible values: usually leave equal to SENDER_TASK_STACK. This alias is the
-// value passed to xTaskCreatePinnedToCore() for the TCP sender task.
-constexpr uint32_t SENDER_TASK_STACK_BYTES = SENDER_TASK_STACK;
+// Possible values: task stack size in BYTES (the ESP-IDF
+// xTaskCreatePinnedToCore depth argument is bytes, not words); must be large
+// enough for TCP+WiFi send work. Increase if a stack overflow occurs, decrease
+// only after measuring the reported stack_free.
+constexpr uint32_t SENDER_TASK_STACK_BYTES = 8192;
 
 // Possible values: FreeRTOS priorities from 0 to configMAX_PRIORITIES - 1.
-// Higher values run before lower-priority tasks; keep camera above sender when
-// capture timing matters.
+// Higher values preempt lower ones. This is deliberately BELOW
+// SENDER_TASK_PRIORITY: a captured frame should leave the device before the
+// next capture replaces it, and the camera task is paced by vTaskDelayUntil
+// rather than by CPU availability.
 constexpr UBaseType_t CAMERA_TASK_PRIORITY = 1;
 
 // Possible values: FreeRTOS priorities from 0 to configMAX_PRIORITIES - 1.
-// Lower than CAMERA_TASK_PRIORITY lets capture pacing win when the device is
-// busy.
+// Deliberately ABOVE CAMERA_TASK_PRIORITY so draining the socket wins over
+// starting another capture. If you pin both tasks to the same core (or use
+// tskNO_AFFINITY), re-check this: a blocking send would then delay capture
+// pacing.
 constexpr UBaseType_t SENDER_TASK_PRIORITY = 2;
+
+static_assert(SENDER_TASK_PRIORITY > CAMERA_TASK_PRIORITY,
+              "the sender is intended to run above the camera; see the "
+              "comments above");
 
 // Possible values: 0, 1, or tskNO_AFFINITY. On dual-core ESP32-S3 boards, core
 // 1 is commonly used for application/camera work.
